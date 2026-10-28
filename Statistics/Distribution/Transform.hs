@@ -58,34 +58,52 @@ linTransFixedPoint (LinearTransform loc sc _) = loc / (1 - sc)
 instance Functor LinearTransform where
   fmap f (LinearTransform loc sc dist) = LinearTransform loc sc (f dist)
 
+-- Note that negative scale reverses order of real line, so mass below
+-- a point becomes mass above its preimage:
+--
+-- > P(loc + sc·X ≤ x) = P(X ≥ (x-loc)/sc)   when sc < 0
+--
+-- Thus complement of CDF of underlying distribution has to be used in
+-- that case and same for quantiles.
 instance D.Distribution d => D.Distribution (LinearTransform d) where
-  cumulative (LinearTransform loc sc dist) x = D.cumulative dist $ (x-loc) / sc
+  cumulative (LinearTransform loc sc dist) x
+    | sc < 0    = D.complCumulative dist y
+    | otherwise = D.cumulative      dist y
+    where y = (x - loc) / sc
+  complCumulative (LinearTransform loc sc dist) x
+    | sc < 0    = D.cumulative      dist y
+    | otherwise = D.complCumulative dist y
+    where y = (x - loc) / sc
 
 instance D.ContDistr d => D.ContDistr (LinearTransform d) where
-  density    (LinearTransform loc sc dist) x = D.density    dist ((x-loc) / sc) / sc
-  logDensity (LinearTransform loc sc dist) x = D.logDensity dist ((x-loc) / sc) - log sc
-  quantile      (LinearTransform loc sc dist) p = loc + sc * D.quantile      dist p
-  complQuantile (LinearTransform loc sc dist) p = loc + sc * D.complQuantile dist p
+  density    (LinearTransform loc sc dist) x = D.density    dist ((x-loc) / sc) / abs sc
+  logDensity (LinearTransform loc sc dist) x = D.logDensity dist ((x-loc) / sc) - log (abs sc)
+  quantile      (LinearTransform loc sc dist) p
+    | sc < 0    = loc + sc * D.complQuantile dist p
+    | otherwise = loc + sc * D.quantile      dist p
+  complQuantile (LinearTransform loc sc dist) p
+    | sc < 0    = loc + sc * D.quantile      dist p
+    | otherwise = loc + sc * D.complQuantile dist p
 
 instance D.MaybeMean d => D.MaybeMean (LinearTransform d) where
-  maybeMean (LinearTransform loc _ dist) = (+loc) <$> D.maybeMean dist
+  maybeMean (LinearTransform loc sc dist) = (\m -> loc + sc * m) <$> D.maybeMean dist
 
 instance (D.Mean d) => D.Mean (LinearTransform d) where
-  mean (LinearTransform loc _ dist) = loc + D.mean dist
+  mean (LinearTransform loc sc dist) = loc + sc * D.mean dist
 
 instance D.MaybeVariance  d => D.MaybeVariance (LinearTransform d) where
   maybeVariance (LinearTransform _ sc dist) = (*(sc*sc)) <$> D.maybeVariance dist
-  maybeStdDev   (LinearTransform _ sc dist) = (*sc)      <$> D.maybeStdDev dist
+  maybeStdDev   (LinearTransform _ sc dist) = (*abs sc)  <$> D.maybeStdDev dist
 
 instance (D.Variance d) => D.Variance (LinearTransform d) where
   variance (LinearTransform _ sc dist) = sc * sc * D.variance dist
-  stdDev   (LinearTransform _ sc dist) = sc * D.stdDev dist
+  stdDev   (LinearTransform _ sc dist) = abs sc * D.stdDev dist
 
 instance (D.MaybeEntropy d) => D.MaybeEntropy (LinearTransform d) where
-  maybeEntropy (LinearTransform _ _ dist) = D.maybeEntropy dist
+  maybeEntropy (LinearTransform _ sc dist) = (+ log (abs sc)) <$> D.maybeEntropy dist
 
 instance (D.Entropy d) => D.Entropy (LinearTransform d) where
-  entropy (LinearTransform _ _ dist) = D.entropy dist
+  entropy (LinearTransform _ sc dist) = D.entropy dist + log (abs sc)
 
 instance D.ContGen d => D.ContGen (LinearTransform d) where
   genContVar (LinearTransform loc sc d) g = do

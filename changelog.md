@@ -1,3 +1,16 @@
+## Unreleased
+
+ * Bug fixes in `LinearTransform` (`Statistics.Distribution.Transform`):
+   `mean`/`maybeMean` now take scale into account, `entropy`/`maybeEntropy`
+   pick up `log |scale|`, and negative scale is handled correctly by
+   `cumulative`, `quantile`, `density`, `logDensity`, `stdDev` and
+   `maybeStdDev`.
+
+ * `complCumulative` for `LinearTransform` is defined in terms of
+   `complCumulative` of underlying distribution and does not lose precision
+   in far tail anymore.
+
+
 ## Changes in 0.16.5.0 [2026.01.09]
 
  * `ContGen` and `DiscreteGen` instances for `Poisson` distributions are added.
