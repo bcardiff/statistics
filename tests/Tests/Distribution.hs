@@ -13,7 +13,7 @@ import Statistics.Distribution.Beta           (BetaDistribution)
 import Statistics.Distribution.Binomial       (BinomialDistribution)
 import Statistics.Distribution.CauchyLorentz
 import Statistics.Distribution.ChiSquared     (ChiSquared)
-import Statistics.Distribution.Exponential    (ExponentialDistribution)
+import Statistics.Distribution.Exponential    (ExponentialDistribution,exponential)
 import Statistics.Distribution.FDistribution  (FDistribution,fDistribution)
 import Statistics.Distribution.Gamma          (GammaDistribution,gammaDistr)
 import Statistics.Distribution.Geometric
@@ -24,7 +24,7 @@ import Statistics.Distribution.NegativeBinomial (NegativeBinomialDistribution)
 import Statistics.Distribution.Normal         (NormalDistribution)
 import Statistics.Distribution.Poisson        (PoissonDistribution)
 import Statistics.Distribution.StudentT
-import Statistics.Distribution.Transform      (LinearTransform)
+import Statistics.Distribution.Transform      (LinearTransform(..))
 import Statistics.Distribution.Uniform        (UniformDistribution)
 import Statistics.Distribution.Weibull        (WeibullDistribution)
 import Statistics.Distribution.DiscreteUniform (DiscreteUniform)
@@ -67,6 +67,7 @@ tests = testGroup "Tests for all distributions"
   , discreteDistrTests (T :: T DiscreteUniform            )
 
   , exactDistributionTests
+  , linearTransformTests
   , unitTests
   ]
 
@@ -437,3 +438,65 @@ unitTests = testGroup "Unit tests"
       = testAssertion (printf "cumulative (fDistribution %i %i) %f ~ %f [got %f]" n m x exact d)
       $ eq 1e-5  exact d
       where d = cumulative (fDistribution n m) x
+
+----------------------------------------------------------------
+-- Tests for linear transformation of distribution
+----------------------------------------------------------------
+
+-- Unit tests for LinearTransform. Exponential distribution is used as
+-- a base since all its moments are known analytically, it's not
+-- symmetric and it provides accurate complCumulative.
+--
+-- > LinearTransform loc sc d  ~  loc + sc·X   where X ~ d
+linearTransformTests :: TestTree
+linearTransformTests = testGroup "Linear transform"
+  [ -- Mean is affected by scale: E[loc + sc·X] = loc + sc·E[X]
+    testAssertion "mean (LinearTransform 0 3 e) == 3"
+  $ 3 == mean (scaled 3)
+  , testAssertion "maybeMean (LinearTransform 0 3 e) == Just 3"
+  $ Just 3 == maybeMean (scaled 3)
+    -- Differential entropy is not scale invariant: h(loc + sc·X) = h(X) + log|sc|
+  , testAssertion "entropy (LinearTransform 0 3 e) ~ 1 + log 3"
+  $ eq 1e-12 (1 + log 3) (entropy (scaled 3))
+  , testAssertion "maybeEntropy (LinearTransform 0 3 e) ~ Just (1 + log 3)"
+  $ maybe False (eq 1e-12 (1 + log 3)) (maybeEntropy (scaled 3))
+    -- Negative scale reverses real line and swaps tails:
+    -- P(loc + sc·X ≤ x) = P(X ≥ (x-loc)/sc)
+  , testAssertion "cumulative (LinearTransform 0 (-1) e) (-1) ~ exp(-1)"
+  $ eq 1e-12 (exp (-1)) (cumulative (scaled (-1)) (-1))
+  , testAssertion "complCumulative (LinearTransform 0 (-1) e) (-1) ~ 1 - exp(-1)"
+  $ eq 1e-12 (1 - exp (-1)) (complCumulative (scaled (-1)) (-1))
+  , testAssertion "quantile (LinearTransform 0 (-1) e) 0.25 ~ -log 4"
+  $ eq 1e-12 (negate (log 4)) (quantile (scaled (-1)) 0.25)
+  , testAssertion "complQuantile (LinearTransform 0 (-1) e) 0.25 ~ -log (4/3)"
+  $ eq 1e-12 (negate (log (4/3))) (complQuantile (scaled (-1)) 0.25)
+  , testAssertion "density (LinearTransform 0 (-1) e) (-1) ~ exp(-1)"
+  $ eq 1e-12 (exp (-1)) (density (scaled (-1)) (-1))
+  , testAssertion "logDensity (LinearTransform 0 (-1) e) (-1) ~ -1"
+  $ eq 1e-12 (-1) (logDensity (scaled (-1)) (-1))
+  , testAssertion "mean (LinearTransform 0 (-1) e) == -1"
+  $ -1 == mean (scaled (-1))
+  , testAssertion "stdDev (LinearTransform 0 (-1) e) == 1"
+  $ 1 == stdDev (scaled (-1))
+  , testAssertion "maybeStdDev (LinearTransform 0 (-1) e) == Just 1"
+  $ Just 1 == maybeStdDev (scaled (-1))
+    -- Complement of CDF of underlying distribution should be used in
+    -- order to not lose precision in far tail
+  , testAssertion "complCumulative (LinearTransform 2 1 e) 42 == complCumulative e 40"
+  $ complCumulative e 40 == complCumulative (shifted 2) 42
+    -- Transformations which are already correct and should stay so
+  , testAssertion "cumulative (LinearTransform 2 1 e) 3 ~ 1 - exp(-1)"
+  $ eq 1e-12 (1 - exp (-1)) (cumulative (shifted 2) 3)
+  , testAssertion "density (LinearTransform 0 3 e) 3 == density e 1 / 3"
+  $ density e 1 / 3 == density (scaled 3) 3
+  , testAssertion "variance (LinearTransform 0 3 e) == 9"
+  $ 9 == variance (scaled 3)
+  , testAssertion "stdDev (LinearTransform 0 3 e) == 3"
+  $ 3 == stdDev (scaled 3)
+  , testAssertion "mean (LinearTransform 2 1 e) == 3"
+  $ 3 == mean (shifted 2)
+  ]
+  where
+    e           = exponential 1
+    scaled  sc  = LinearTransform 0   sc e
+    shifted loc = LinearTransform loc 1  e

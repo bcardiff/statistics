@@ -21,7 +21,7 @@ import Statistics.Distribution.NegativeBinomial (NegativeBinomialDistribution, n
 import Statistics.Distribution.Normal          (NormalDistribution, normalDistr)
 import Statistics.Distribution.Poisson         (PoissonDistribution, poisson)
 import Statistics.Distribution.StudentT
-import Statistics.Distribution.Transform       (LinearTransform, scaleAround)
+import Statistics.Distribution.Transform       (LinearTransform(..))
 import Statistics.Distribution.Uniform         (UniformDistribution, uniformDistr)
 import Statistics.Distribution.Weibull         (WeibullDistribution, weibullDistr)
 import Statistics.Distribution.DiscreteUniform (DiscreteUniform, discreteUniformAB)
@@ -79,9 +79,14 @@ instance QC.Arbitrary StudentT where
 instance QC.Arbitrary d => QC.Arbitrary (LinearTransform d) where
   arbitrary = do
     m <- QC.choose (-10,10)
-    s <- QC.choose (1e-1,1e1)
+    -- Pure shift (sc = 1) and reflection of real line (sc < 0) are
+    -- valid parameters as well and have to be exercised
+    s <- QC.frequency [ (4,            QC.choose (1e-1,1e1))
+                      , (4, negate <$> QC.choose (1e-1,1e1))
+                      , (1, return 1)
+                      ]
     d <- arbitrary
-    return $ scaleAround m s d
+    return $ LinearTransform m s d
 instance QC.Arbitrary FDistribution where
   arbitrary =  fDistribution
            <$> ((abs <$> arbitrary) `suchThat` (>0))
